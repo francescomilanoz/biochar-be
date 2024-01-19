@@ -8,12 +8,14 @@ from collections import OrderedDict
 from collections import defaultdict
 import calendar
 from dateutil.relativedelta import relativedelta
-import os
+
+# how to run?
+# first, run export FLASK_APP=python-be
+# then, run flask run
 
 app = Flask(__name__)
 cors = CORS(app)
 app.config['CORS_HEADERS'] = 'Content-Type'
-
 
 # how many points per second to consider. 1 will be accurate enough for most cases. Please note that increasing this will also increase (exponentially) the computation time
 ACCURACY = 1
@@ -37,7 +39,7 @@ def generate_month_map(start_date, end_date):
     month_map = defaultdict(int)
 
     while current_date <= end_date:
-        month_key = f"{current_date.month:02d}/{current_date.year}"
+        month_key = f"{current_date.year}/{current_date.month:02d}"
 
         # Calculate the number of days remaining in the current month
         if current_date.month == end_date.month and current_date.year == end_date.year:
@@ -105,7 +107,7 @@ def anaylse_file(start_date, end_date):
 
     except pd.errors.EmptyDataError:
         # File is empty, return 0
-        return dict(productive_days=0, unproductive_days=0, off_days=0, on_days=0, total_days=difference_in_days(start_date, end_date), start_date=start_date, end_date=end_date, monthly_productive_days=OrderedDict(), monthly_off_days=OrderedDict(), error=1)
+        return dict(productive_days=0, unproductive_days=0, off_days=0, on_days=0, total_days=difference_in_days(start_date, end_date), start_date=start_date, end_date=end_date, monthly_productive_days=OrderedDict(), monthly_off_days=OrderedDict(), monthly_unproductive_days=OrderedDict(), monthly_on_days=OrderedDict(), error=1)
     print("File downloaded!")
 
     df['DataOra'] = pd.to_datetime(df['DataOra'], format='%d/%m/%Y %H:%M:%S')
@@ -174,7 +176,8 @@ def anaylse_file(start_date, end_date):
                 monthly_off_minutes[current_monthly_key] = monthly_off_minutes.get(current_monthly_key, 0) + (1/ACCURACY)
 
     productive_days = round(productive_minutes/60/60/24, 2)
-    total_days = difference_in_days(start_date, end_date)
+    total_days = difference_in_days(start_date, end_date) + 1
+    print(f"Total days: {total_days}")
     off_days = round(off_minutes/60/60/24, 2)
     on_days = round(total_days - off_days, 2)
     unproductive_days = round(total_days - off_days - productive_days, 2)
@@ -190,9 +193,13 @@ def anaylse_file(start_date, end_date):
 
     monthly_total_days = generate_month_map(datetime.datetime.strptime(start_date, "%d/%m/%Y"), datetime.datetime.strptime(end_date, "%d/%m/%Y"))
 
-    #monthly_unproductive_days = OrderedDict()
-    #for key, value in monthly_total_days.items():
-    #    monthly_unproductive_days[key] = XXXXX
+    monthly_unproductive_days = OrderedDict()
+    for key, value in monthly_total_days.items():
+        monthly_unproductive_days[key] = round(monthly_total_days.get(key, 0) - monthly_off_days.get(key, 0) - monthly_productive_days.get(key, 0), 2)
+
+    monthly_on_days = OrderedDict()
+    for key, value in monthly_total_days.items():
+        monthly_on_days[key] = round(monthly_total_days.get(key, 0) - monthly_off_days.get(key, 0), 2)
 
 
     # It can happen that some of those values overflows of at max 0.99 the total days. Limiting them here
@@ -216,8 +223,19 @@ def anaylse_file(start_date, end_date):
 
     string_result = f"The machine was active for {productive_days} days in the period {start_date} - {end_date}"
     print(string_result)
-    return dict(productive_days=productive_days, unproductive_days=unproductive_days, off_days=off_days, on_days=on_days, total_days=total_days, start_date=start_date, end_date=end_date, monthly_productive_days=monthly_productive_days, monthly_off_days=monthly_off_days, error=0)
+    return dict(productive_days=productive_days, unproductive_days=unproductive_days, off_days=off_days, on_days=on_days, total_days=total_days, start_date=start_date, end_date=end_date, monthly_productive_days=monthly_productive_days, monthly_off_days=monthly_off_days, monthly_unproductive_days=monthly_unproductive_days, monthly_on_days=monthly_on_days, error=0)
 
+USERNAME = 'admin'
+PASSWORD = 'test'
 
-if __name__ == '__main__':
-    app.run(debug=True, port=os.getenv("PORT", default=5000))
+@app.route('/authenticate')
+@cross_origin()
+def authenticate():
+    username = request.args.get('username')
+    password = request.args.get('password')
+    print('Authenticating...')
+    if (username == USERNAME and password == PASSWORD):
+        print('Authenticated succesfully!')
+        return 'true'
+    print('Wrong username or password.')
+    return 'false'
